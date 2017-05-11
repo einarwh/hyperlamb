@@ -9,23 +9,9 @@ open Suave.ServerErrors
 
 open FParsec
 
-type Token = Abstraction | Application | Reference of int
+open Types
 
-type ExpI =
-  | VarI of int
-  | LamI of int * ExpI
-  | AppI of ExpI * ExpI
-
-type ExpII =
-  | VarII of int
-  | LamII of int * ExpI
-  | AppII of ExpII * ExpII
-
-type Exp =
-  | Var of string
-  | Lam of string * Exp
-  | App of Exp * Exp
-
+open Eval
 
 let unparse =
     let pstr s = "(" + s + ")"
@@ -69,19 +55,30 @@ let singleTokenParser =
 
 do tokenParserRef := many1 singleTokenParser
 
-let rec help tokens no =
+type LambResult<'T> = Yay of 'T | Nay of string 
+
+let rec tokenMapper tokens lambdaIndex = 
+  match tokens with
+  | [] -> []
+  | h::t -> 
+    match h with 
+    | Reference n -> ReferenceI n :: (tokenMapper t lambdaIndex)
+    | Abstraction -> AbstractionI lambdaIndex :: (tokenMapper t (lambdaIndex + 1))
+    | Application -> ApplicationI :: (tokenMapper t lambdaIndex)
+
+let rec help tokens =
    match tokens with
    | [] -> None
    | h::t ->
      match h with 
-     | Reference n -> Some (VarI n, t)
-     | Abstraction -> 
-       help t (no + 1) |> Option.map (fun (e, r) -> LamI (no, e), r)
-     | Application ->
-       match help t no with
+     | ReferenceI n -> Some (VarI n, t)
+     | AbstractionI ix -> 
+       help t |> Option.map (fun (e, r) -> LamI (ix, e), r)
+     | ApplicationI ->
+       match help t with
        | None -> None
        | Some (e1, r1) ->
-         match help r1 no with
+         match help r1 with
          | None -> None
          | Some (e2, r2) ->
            Some (AppI (e1, e2), r2)
@@ -90,20 +87,74 @@ let rec help tokens no =
 // λf.λx.f (f x)
 // LLA[R2,A[R2,R1]]
 // LLAR2AR2R1
+// zero (\f.\x.x)
+// 2 (\f.\x.f (f x))
+// 3 (\f.\x.f (f (f x)))
 
-let parse (p : Parser<Token list, unit>) (str : string) (vars : string list): string =
-  printfn "input <%s>" str
+// succ \n.\f.\x.f ((n f) x)
+// add \a.\b.a (\n.\f.\x.f (n f x)) b
+
+// succ LLLAR2AAR3R2R1?n&f&x
+// zero LLR1?a&b
+
+// (succ zero)
+// ALLLAR2AAR3R2R1LLR1?n&f&x&a&b
+// ALLLAR2AAR3R2R1LLR1?n&f&x&a&b
+
+// exp = (λn.λf.λx.f (n f x)) (λa.λb.b)
+// exp' = λf.λx.f ((λa.λb.b) f x)
+// LLAR2AALLR1R2R1?f&x&a&b
+
+// exp'' = λf.λx.f ((λb.b) x)
+// LLAR2ALR1R1?f&x&b
+
+type ExpResult = 
+  { self : Exp 
+    next : Exp option }
+
+let parseExpI (p : Parser<Token list, unit>) (str : string): ExpI option =
   match run p str with
   | Success(result, _, _)   -> 
-    match help result 0 with
-    | Some (ei, ts) -> 
-      let e = expmapper ei vars []   
-      let s = unparse e
-      printf "%s" s
-      s
-    | None ->
-      sprintf "tokens good, expression bad"
-  | Failure(errorMsg, _, _) -> errorMsg
+    let tokens = tokenMapper result 0
+    help tokens |> Option.map (fun (ei, ts) -> ei)
+  | Failure(errorMsg, _, _) -> None
+
+let parseExp (p : Parser<Token list, unit>) (str : string) (vars : string list): Exp option =
+  printfn "input <%s>" str
+  let maybeExpI = parseExpI p str
+  maybeExpI |> Option.map (fun ei -> expmapper ei vars [])
+
+let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : string list)
+  : ExpResult option =
+  printfn "input <%s>" str
+  let maybeExpI = parseExpI p str
+  let maybeExp = maybeExpI |> Option.map (fun ei -> expmapper ei vars [])
+  match maybeExp with
+  | Some exp ->
+    let exp' = reduce exp
+    printfn "exp = %s" (unparse exp)
+    printfn "exp' = %s" (unparse exp')
+    let result = 
+      if exp = exp' then
+        { self = exp; next = None }
+      else
+        { self = exp; next = Some exp' }
+    Some result 
+  | None -> None
+
+let parse (p : Parser<Token list, unit>) (str : string) (vars : string list): string option =
+  printfn "input <%s>" str
+  let maybeExpI = parseExpI p str
+  let maybeExp = maybeExpI |> Option.map (fun ei -> expmapper ei vars [])
+  match maybeExp with
+  | Some exp ->
+    let exp' = reduce exp
+    printfn "exp = %s" (unparse exp)
+    printfn "exp' = %s" (unparse exp')
+    ()
+  | None -> ()
+  let maybeStr = maybeExp |> Option.map unparse
+  maybeStr
 
 let getVars (r : HttpRequest) : string list = 
   let defaults = ['a' .. 'z'] |> List.map (fun c -> string(c))
@@ -112,25 +163,58 @@ let getVars (r : HttpRequest) : string list =
   else
     let qps = r.query
     let qvars = qps |> List.map (fun (k, v) -> k) 
-    qvars @ (defaults |> List.except qvars)
+    let vars = qvars @ (defaults |> List.except qvars)
+    vars
+
+type AcceptableMimeType = TextPlain | TextHtml | ImagePng | Hal
+
+let getPreferredMimeTypeFromAcceptHeader (acceptHeader : string) =
+  if acceptHeader.Contains("text/plain") then TextPlain
+  else if acceptHeader.Contains("text/html") then TextHtml
+  else if acceptHeader.Contains("image/png") then ImagePng
+  else if acceptHeader.Contains("application/hal") then Hal
+  else TextPlain
+
+let getPreferredMimeTypeFromRequest (request : HttpRequest) : AcceptableMimeType = 
+  match request.header "Accept" with
+  | Choice1Of2 acceptHeader ->
+    getPreferredMimeTypeFromAcceptHeader acceptHeader
+  | Choice2Of2 x ->
+    TextPlain
+  
+let createTextPlainResponse maybeExpResult =
+  match maybeExpResult with 
+  | Some { self = exp; next = _ } ->
+    let response = unparse exp |> OK 
+    response >=> Writers.setMimeType "text/plain; charset=utf-8"
+  | None ->
+    "nope" |> OK
+
+let createTextHtmlResponse maybeExpResult =
+  match maybeExpResult with 
+  | Some { self = exp; next = Some exp' } ->
+    sprintf "<html><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><body><p>%s</p><a href=\"%s\">Next</a></body></html>" (unparse exp) (unparse exp') |> OK
+  | Some { self = exp; next = None } ->
+    let response = (sprintf "<html><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><body><p>%s</p></body>" (unparse exp) |> OK)
+    response >=> Writers.setMimeType "text/html"
+  | None ->
+    "nope" |> OK
 
 let handle lamb = request (fun r ->
-  match r.header "Accept" with
-  | Choice1Of2 x ->
-    printfn "1: %s" x
-  | Choice2Of2 x ->
-    printfn "2: %s" x
+  let acceptableMimeType = getPreferredMimeTypeFromRequest r
   let vars = getVars r
-  parse tokenParser lamb vars |> OK)
+  let maybeExpResult = parseExpResult tokenParser lamb vars
+  match acceptableMimeType with 
+  | TextPlain -> 
+    createTextPlainResponse maybeExpResult
+  | TextHtml ->
+    createTextHtmlResponse maybeExpResult)
 
 let app : WebPart = 
   choose [ 
-      pathScan "/hyperlamb/%s" handle >=> Writers.setMimeType "text/plain; charset=utf-8"
+      pathScan "/hyperlamb/%s" handle
       NOT_FOUND "nope" 
   ]
-//  choose
-//  [ pathScan "/hyperlamb/%s" (fun (exp) -> OK "lol" ) 
-//    NOT_FOUND ]
 
 [<EntryPoint>]
 let main argv =
