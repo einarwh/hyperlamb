@@ -1,5 +1,7 @@
 module Hyperlamb.Program
 
+open System
+
 open Suave
 open Suave.Filters
 open Suave.Operators
@@ -212,9 +214,9 @@ let getPreferredMimeTypeFromRequest (request : HttpRequest) : AcceptableMimeType
   | Choice2Of2 x ->
     TextPlain
   
-let createTextPlainResponse maybeExpResult =
-  match maybeExpResult with 
-  | Some { self = exp; next = _ } ->
+let createTextPlainResponse maybeExp =
+  match maybeExp with 
+  | Some exp ->
     let response = unparse exp |> OK 
     response >=> Writers.setMimeType "text/plain; charset=utf-8"
   | None ->
@@ -232,20 +234,20 @@ let createTextHtmlResponse maybeExpResult =
     let bounds = listBoundVariables exp'
     let nextLink = tokenString + toQueryString bounds
     printfn "%A" bounds
-    sprintf "<html><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><body><p>%s</p><a href=\"%s\">Next</a></body></html>" (unparse exp) nextLink |> OK
+    sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p></body></html>" (unparse exp) nextLink |> OK
   | Some { self = exp; next = None } ->
-    let response = (sprintf "<html><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><body><p>%s</p></body>" (unparse exp) |> OK)
+    let response = (sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>%s</p></body>" (unparse exp) |> OK)
     response >=> Writers.setMimeType "text/html"
   | None ->
     "nope" |> OK
-
 let handle lamb = request (fun r ->
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
   let vars = getVars r
   let maybeExpResult = parseExpResult tokenParser lamb vars
+  printfn "HEADERS %A" r.headers
   match acceptableMimeType with 
   | TextPlain -> 
-    createTextPlainResponse maybeExpResult
+    createTextPlainResponse (maybeExpResult |> Option.map (fun { self = e; next = _} -> e))
   | TextHtml ->
     createTextHtmlResponse maybeExpResult)
 
