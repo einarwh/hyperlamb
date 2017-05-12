@@ -55,18 +55,24 @@ let unparse =
     and argstr = function
         | Var s -> s
         | t -> pstr (unparse t)
-    unparse
+    unparse  
 
-let expmapper (ei : ExpI) (vars : string list) (scope : string list) = 
+let getVariableName (scope : string list) (free : string list) (n : int) =
+  if n < scope.Length then
+    List.item n scope
+  else 
+    List.item (n - List.length scope) free
+  
+let expmapper (ei : ExpI) (bound : string list) (free : string list) (scope : string list) = 
   let rec emapper (ei : ExpI) (scope : string list) =
     match ei with 
     | VarI n ->
       printfn "Lookup Var %d" (n - 1)
-      let v : string = scope |> List.item (n - 1)
+      let v : string = getVariableName scope free (n - 1)
       Var v 
     | LamI (i, ei2) -> 
       printfn "Lookup Lam %d" i
-      let v : string = vars |> List.item i
+      let v : string = bound |> List.item i
       Lam (v, emapper ei2 (v::scope))
     | AppI (ei1, ei2) -> App (emapper ei1 scope, emapper ei2 scope)
   emapper ei scope
@@ -131,7 +137,7 @@ let rec help tokens =
 
 // (succ zero)
 // ALLLAR2AAR3R2R1LLR1?n&f&x&a&b
-// ALLLAR2AAR3R2R1LLR1?n&f&x&a&b
+// ALLLAR2AAR3R2R1ALLLAR2AAR3R2R1LLR1?n&f&x&a&b
 
 // exp = (λn.λf.λx.f (n f x)) (λa.λb.b)
 // exp' = λf.λx.f ((λa.λb.b) f x)
@@ -144,23 +150,46 @@ type ExpResult =
   { self : Exp 
     next : Exp option }
 
+let rec countLambdas tokens =
+   match tokens with
+   | [] -> 0
+   | h::t ->
+     let n = countLambdas t
+     match h with
+     | Abstraction -> 1 + n
+     | _ -> n
+  
 let parseExpI (p : Parser<Token list, unit>) (str : string): ExpI option =
   match run p str with
-  | Success(result, _, _)   -> 
+  | Success(result, _, _) -> 
+    let lambdas = countLambdas result
     let tokens = tokenMapper result 0
     help tokens |> Option.map (fun (ei, ts) -> ei)
   | Failure(errorMsg, _, _) -> None
 
 let parseExp (p : Parser<Token list, unit>) (str : string) (vars : string list): Exp option =
   printfn "input <%s>" str
-  let maybeExpI = parseExpI p str
-  maybeExpI |> Option.map (fun ei -> expmapper ei vars [])
+  match run p str with
+  | Success(result, _, _) -> 
+    let tokens = tokenMapper result 0
+    match help tokens with
+    | Some (ei, ts) ->      
+      let boundVariableCount = countLambdas result
+      let bound = vars |> List.take boundVariableCount
+      let free = vars |> List.skip boundVariableCount
+      printfn "All vars: %A" vars
+      printfn "Bound vars: %A" bound
+      printfn "Free vars: %A" free
+      let e = expmapper ei bound free [] 
+      Some e
+    | None -> None
+  | Failure(errorMsg, _, _) -> 
+    None
 
 let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : string list)
   : ExpResult option =
   printfn "input <%s>" str
-  let maybeExpI = parseExpI p str
-  let maybeExp = maybeExpI |> Option.map (fun ei -> expmapper ei vars [])
+  let maybeExp = parseExp p str vars
   match maybeExp with
   | Some exp ->
     let exp' = reduce exp
@@ -173,20 +202,6 @@ let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : string 
         { self = exp; next = Some exp' }
     Some result 
   | None -> None
-
-let parse (p : Parser<Token list, unit>) (str : string) (vars : string list): string option =
-  printfn "input <%s>" str
-  let maybeExpI = parseExpI p str
-  let maybeExp = maybeExpI |> Option.map (fun ei -> expmapper ei vars [])
-  match maybeExp with
-  | Some exp ->
-    let exp' = reduce exp
-    printfn "exp = %s" (unparse exp)
-    printfn "exp' = %s" (unparse exp')
-    ()
-  | None -> ()
-  let maybeStr = maybeExp |> Option.map unparse
-  maybeStr
 
 let getVars (r : HttpRequest) : string list = 
   let defaults = ['a' .. 'z'] |> List.map (fun c -> string(c))
@@ -251,9 +266,12 @@ let handle lamb = request (fun r ->
   | TextHtml ->
     createTextHtmlResponse maybeExpResult)
 
+let receiveLambda = request (fun r -> OK "lol")
+
 let app : WebPart = 
   choose [ 
-      pathScan "/hyperlamb/%s" handle
+      GET >=> pathScan "/hyperlamb/%s" handle
+      POST >=> path "/hyperlamb" >=> receiveLambda
       NOT_FOUND "nope" 
   ]
 
