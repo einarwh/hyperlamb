@@ -19,6 +19,8 @@ open Types
 open Parser
 open Eval
 
+type VarType = NamedLambdaVar | OrdinaryVar 
+
 let rec listBoundVariables exp =
   match exp with
   | Var v -> []
@@ -67,7 +69,10 @@ let getVariableName (scope : string list) (free : string list) (n : int) =
   else 
     List.item (n - List.length scope) free
   
-let expmapper (ei : ExpI) (bound : string list) (free : string list) (scope : string list) = 
+let expmapper (ei : ExpI) 
+              (bound : string list) 
+              (free : string list) 
+              (scope : string list) = 
   let rec emapper (ei : ExpI) (scope : string list) =
     match ei with 
     | VarI n ->
@@ -172,7 +177,8 @@ let parseExpI (p : Parser<Token list, unit>) (str : string): ExpI option =
     help tokens |> Option.map (fun (ei, ts) -> ei)
   | Failure(errorMsg, _, _) -> None
 
-let parseExp (p : Parser<Token list, unit>) (str : string) (vars : string list): Exp option =
+let parseExp (p : Parser<Token list, unit>) (str : string) (vars : (string * VarType) list)
+  : Exp option =
   printfn "input <%s>" str
   match run p str with
   | Success(result, _, _) -> 
@@ -180,8 +186,8 @@ let parseExp (p : Parser<Token list, unit>) (str : string) (vars : string list):
     match help tokens with
     | Some (ei, ts) ->      
       let boundVariableCount = countLambdas result
-      let bound = vars |> List.take boundVariableCount
-      let free = vars |> List.skip boundVariableCount
+      let bound = vars |> List.take boundVariableCount |> List.map (fun (n, t) -> n)
+      let free = vars |> List.skip boundVariableCount |> List.map (fun (n, t) -> n)
       printfn "All vars: %A" vars
       printfn "Bound vars: %A" bound
       printfn "Free vars: %A" free
@@ -191,7 +197,7 @@ let parseExp (p : Parser<Token list, unit>) (str : string) (vars : string list):
   | Failure(errorMsg, _, _) -> 
     None
 
-let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : string list)
+let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : (string * VarType) list)
   : ExpResult option =
   printfn "input <%s>" str
   let maybeExp = parseExp p str vars
@@ -208,14 +214,17 @@ let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : string 
     Some result 
   | None -> None
 
-let getVars (r : HttpRequest) : string list = 
+
+let getVars (r : HttpRequest) : (string * VarType) list = 
   let defaults = ['a' .. 'z'] |> List.map (fun c -> string(c))
   if r.rawQuery.Length = 0 then
-    defaults
+    defaults |> List.map (fun n -> n, OrdinaryVar)
   else
     let qps = r.query
-    let qvars = qps |> List.map (fun (k, v) -> k) 
-    let vars = qvars @ (defaults |> List.except qvars)
+    let qvars = qps |> List.map (fun (k, v) -> k, match v with Some "name" -> NamedLambdaVar | _ -> OrdinaryVar) 
+    let qvarnames = qvars |> List.map (fun (n, t) -> n)
+    let additional = defaults |> List.except qvarnames
+    let vars = qvars @ (additional |> List.map (fun n -> n, OrdinaryVar))
     vars
 
 type AcceptableMimeType = TextPlain | TextHtml | ImagePng | Hal
@@ -276,16 +285,25 @@ let nameMap =
   m.Add("id", { name = "id"; lambda = Lam ("x", Var "x"); encoded = "LR1?x" })
   m
   
+let rec applyNamedLambdas vars expResult : ExpResult = 
+  expResult
+
 let handleGetLambda lamb = request (fun r ->
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
-  let vars = getVars r
-  let maybeExpResult = parseExpResult tokenParser lamb vars
-  printfn "HEADERS %A" r.headers
-  match acceptableMimeType with 
-  | TextPlain -> 
-    createTextPlainResponse (maybeExpResult |> Option.map (fun { self = e; next = _} -> e))
-  | TextHtml ->
-    createTextHtmlResponse maybeExpResult)
+  let vars : (string * VarType) list = getVars r
+  let namedLambdaNames = vars |> List.filter (fun (n, t) -> t = NamedLambdaVar) |> List.map (fun (n, t) -> n)
+  let missingNamedLambdas = namedLambdaNames |> List.filter (fun n -> n |> (nameMap.ContainsKey >> not))
+  if missingNamedLambdas.Length > 0 then 
+    BAD_REQUEST "Missing named lambdas"
+  else
+    let namedLambdas = namedLambdaNames |> List.map (fun n -> n, nameMap.Item(n))
+    let maybeExpRes = parseExpResult tokenParser lamb vars
+    let maybeExpResult = maybeExpRes |> Option.map (fun er -> applyNamedLambdas namedLambdas er)
+    match acceptableMimeType with 
+    | TextPlain -> 
+      createTextPlainResponse (maybeExpResult |> Option.map (fun { self = e; next = _} -> e))
+    | TextHtml ->
+      createTextHtmlResponse maybeExpResult)
 
 let handlePostNamedLambda = request (fun r -> 
   printfn "handlePostNamedLambda"
@@ -332,6 +350,35 @@ let handleGetName name = request (fun r ->
   else
     sprintf "The name %s isn't registered." name |> NOT_FOUND)
 
+let handlePutNamedLambda name =
+  request (fun r -> 
+  printfn "handlePutNamedLambda"
+  let maybeName = r.formData "name"
+  let maybeLambda = r.formData "lambda"
+  match maybeName, maybeLambda with 
+  | Choice1Of2 name, Choice1Of2 lambda ->
+    printfn "provided name %s" name
+    printfn "provided lambda %s" lambda
+    if nameMap.ContainsKey(name) then 
+      nameMap.Remove(name) |> ignore
+      match run expParser lambda with
+      | Success(exp, _, _) ->
+        let scope = []
+        let tokenString = tokenify scope exp |> toTokenString 
+        let bounds = listBoundVariables exp
+        let link = tokenString + toQueryString bounds
+        nameMap.Add(name, { name = name; lambda = exp; encoded = link })
+        let location = sprintf "/hyperlamb/%s" link
+        printfn "Location for %s is %s" name location
+        let refresh = sprintf "0; url=%s" location
+        CREATED "" >=> setHeader "location" location >=> setHeader "refresh" refresh
+      | Failure(x,_,_) -> 
+        x |> BAD_REQUEST
+    else
+      sprintf "The name %s isn't registered." name |> NOT_FOUND 
+  | _ ->
+    "boom" |> BAD_REQUEST)
+
 let handleDeleteName name = 
   printfn "handleDeleteName %s" name
   if nameMap.Remove(name) then
@@ -343,6 +390,7 @@ let app : WebPart =
       GET >=> choose [ path "/hyperlamb/names" >=> handleGetNames
                        pathScan "/hyperlamb/names/%s" handleGetName
                        pathScan "/hyperlamb/%s" handleGetLambda ]
+      PUT >=> pathScan "/hyperlamb/names/%s" handlePutNamedLambda
       POST >=> path "/hyperlamb" >=> handlePostNamedLambda
       DELETE >=> pathScan "/hyperlamb/names/%s" handleDeleteName
       NOT_FOUND "nope" 
