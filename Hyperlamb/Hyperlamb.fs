@@ -1,18 +1,22 @@
 module Hyperlamb.Program
 
 open System
+open System.Collections.Generic
 
 open Suave
+open Suave.Response
 open Suave.Filters
 open Suave.Operators
 open Suave.Successful
+open Suave.Redirection
 open Suave.RequestErrors
 open Suave.ServerErrors
+open Writers
 
 open FParsec
 
 open Types
-
+open Parser
 open Eval
 
 let rec listBoundVariables exp =
@@ -133,7 +137,8 @@ let rec help tokens =
 // add \a.\b.a (\n.\f.\x.f (n f x)) b
 
 // succ LLLAR2AAR3R2R1?n&f&x
-// zero LLR1?a&b
+// zero LLR1?f&x
+// zero λf.λx.x
 
 // (succ zero)
 // ALLLAR2AAR3R2R1LLR1?n&f&x&a&b
@@ -255,6 +260,22 @@ let createTextHtmlResponse maybeExpResult =
     response >=> Writers.setMimeType "text/html"
   | None ->
     "nope" |> OK
+
+// 
+//Cache-Control: no-store, must-revalidate
+//Pragma: no-cache
+//Expires: 0
+
+type NamedLambda = 
+  { name: string
+    lambda: Exp
+    encoded: string }
+
+let nameMap = 
+  let m = Dictionary<string, NamedLambda>()
+  m.Add("id", { name = "id"; lambda = Lam ("x", Var "x"); encoded = "LR1?x" })
+  m
+  
 let handle lamb = request (fun r ->
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
   let vars = getVars r
@@ -266,11 +287,57 @@ let handle lamb = request (fun r ->
   | TextHtml ->
     createTextHtmlResponse maybeExpResult)
 
-let receiveLambda = request (fun r -> OK "lol")
+let receiveLambda = request (fun r -> 
+  printfn "got called"
+  let maybeName = r.formData "name"
+  let maybeLambda = r.formData "lambda"
+  match maybeName, maybeLambda with 
+  | Choice1Of2 name, Choice1Of2 lambda ->
+    printfn "provided name %s" name
+    printfn "provided lambda %s" lambda
+    if nameMap.ContainsKey(name) then 
+      sprintf "The name %s is already registered." name |> CONFLICT 
+    else 
+      match run expParser lambda with
+      | Success(exp, _, _) ->
+        let scope = []
+        let tokenString = tokenify scope exp |> toTokenString 
+        let bounds = listBoundVariables exp
+        let link = tokenString + toQueryString bounds
+        nameMap.Add(name, { name = name; lambda = exp; encoded = link })
+        let location = sprintf "/hyperlamb/%s" link
+        printfn "Location for %s is %s" name location
+        let refresh = sprintf "0; url=%s" location
+        CREATED "" >=> setHeader "location" location >=> setHeader "refresh" refresh
+      | Failure(x,_,_) -> 
+        x |> BAD_REQUEST
+  | _ ->
+    "boom" |> BAD_REQUEST)
+
+let handleGet = request (fun r -> 
+  let html = "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><form action=\"/hyperlamb\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><br />Lambda:<br /><input type=\"text\" name=\"lambda\" /><br /><br /><input type=\"submit\" value=\"Submit\"></form></body>" 
+  OK html)
+
+let temporaryRedirect location = 
+  setHeader "Location" location >=> response HTTP_307 [||]
+
+let handleName name = request (fun r -> 
+  if nameMap.ContainsKey(name) then
+    let { name = _; lambda = _; encoded = tokenString } = nameMap.Item(name)
+    printfn "%s" r.host
+    printfn "FOUND NAME %s" name
+    let relativeUrl = sprintf "/hyperlamb/%s" tokenString
+    printfn "URL %s" relativeUrl
+    temporaryRedirect relativeUrl
+  else
+    let html = sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body>%s</body>" name
+    OK html)
 
 let app : WebPart = 
   choose [ 
-      GET >=> pathScan "/hyperlamb/%s" handle
+      GET >=> choose [ path "/hyperlamb" >=> handleGet
+                       pathScan "/hyperlamb/names/%s" handleName
+                       pathScan "/hyperlamb/%s" handle ]
       POST >=> path "/hyperlamb" >=> receiveLambda
       NOT_FOUND "nope" 
   ]
