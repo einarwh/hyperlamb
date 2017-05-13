@@ -276,7 +276,7 @@ let nameMap =
   m.Add("id", { name = "id"; lambda = Lam ("x", Var "x"); encoded = "LR1?x" })
   m
   
-let handle lamb = request (fun r ->
+let handleGetLambda lamb = request (fun r ->
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
   let vars = getVars r
   let maybeExpResult = parseExpResult tokenParser lamb vars
@@ -287,8 +287,8 @@ let handle lamb = request (fun r ->
   | TextHtml ->
     createTextHtmlResponse maybeExpResult)
 
-let receiveLambda = request (fun r -> 
-  printfn "got called"
+let handlePostNamedLambda = request (fun r -> 
+  printfn "handlePostNamedLambda"
   let maybeName = r.formData "name"
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
@@ -314,14 +314,14 @@ let receiveLambda = request (fun r ->
   | _ ->
     "boom" |> BAD_REQUEST)
 
-let handleGet = request (fun r -> 
+let handleGetNames = request (fun r -> 
   let html = "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><form action=\"/hyperlamb\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><br />Lambda:<br /><input type=\"text\" name=\"lambda\" /><br /><br /><input type=\"submit\" value=\"Submit\"></form></body>" 
   OK html)
 
 let temporaryRedirect location = 
   setHeader "Location" location >=> response HTTP_307 [||]
 
-let handleName name = request (fun r -> 
+let handleGetName name = request (fun r -> 
   if nameMap.ContainsKey(name) then
     let { name = _; lambda = _; encoded = tokenString } = nameMap.Item(name)
     printfn "%s" r.host
@@ -330,15 +330,21 @@ let handleName name = request (fun r ->
     printfn "URL %s" relativeUrl
     temporaryRedirect relativeUrl
   else
-    let html = sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body>%s</body>" name
-    OK html)
+    sprintf "The name %s isn't registered." name |> NOT_FOUND)
 
+let handleDeleteName name = 
+  printfn "handleDeleteName %s" name
+  if nameMap.Remove(name) then
+    NO_CONTENT
+  else 
+    sprintf "The name %s isn't registered." name |> NOT_FOUND
 let app : WebPart = 
   choose [ 
-      GET >=> choose [ path "/hyperlamb" >=> handleGet
-                       pathScan "/hyperlamb/names/%s" handleName
-                       pathScan "/hyperlamb/%s" handle ]
-      POST >=> path "/hyperlamb" >=> receiveLambda
+      GET >=> choose [ path "/hyperlamb/names" >=> handleGetNames
+                       pathScan "/hyperlamb/names/%s" handleGetName
+                       pathScan "/hyperlamb/%s" handleGetLambda ]
+      POST >=> path "/hyperlamb" >=> handlePostNamedLambda
+      DELETE >=> pathScan "/hyperlamb/names/%s" handleDeleteName
       NOT_FOUND "nope" 
   ]
 
