@@ -93,3 +93,12 @@ let deleteNamedLambda (req : DeleteNamedLambdaRequest)
     FailedDeleteDueToNameNotRegistered
   | Some namedLambda ->
     SuccessfulDelete namedLambda
+
+type ListAllNamedLambdasResponse =
+  { namedLambdas : NamedLambda list }
+
+let listAllNamedLambdas ()
+  : ListAllNamedLambdasResponse =
+  let namedLambdas = listAllNamedLambdas() |> List.map (fun (n, nls) -> nls)
+  { namedLambdas = namedLambdas }
+  

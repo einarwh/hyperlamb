@@ -227,8 +227,6 @@ let createTextPlainResponse maybeExp =
   | None ->
     "nope" |> OK
 
-
-// 
 //Cache-Control: no-store, must-revalidate
 //Pragma: no-cache
 //Expires: 0
@@ -252,21 +250,27 @@ let createTextHtmlResponse maybeExpResult =
     let names = namedLambdas |> List.map (fun { name = n; lambda = _; encoded = _ } -> n)
     // If it is a named lambda, display the name.
     // Otherwise, allow user to provide a name for it.
-    let nameDiv = 
-      if names.IsEmpty then
-        sprintf "<div><form action=\"/hyperlamb\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><input type=\"hidden\" name=\"lambda\" value=\"%s\" /><input type=\"submit\" value=\"Submit\"></form></div>" (unparse exp)
+    let showNamesDiv = 
+      if names.IsEmpty then "<div />"
       else
-        names |> String.concat "<br />" |> sprintf "<div>%s</div>"
+        names |> List.map (fun n -> sprintf "<li>%s</li>" n) 
+              |> String.concat "" 
+              |> sprintf "<div>Names: <ul>%s</ul></div>"
+    let addNameDiv = 
+      sprintf "<div><form action=\"/hyperlamb\" method=\"POST\">Add name:<br /><input type=\"text\" name=\"name\" /><input type=\"hidden\" name=\"lambda\" value=\"%s\" /><input type=\"submit\" value=\"Submit\"></form></div>" (unparse exp)
     match maybeNext with 
     | Some exp' ->
       let scope = []
       let tokenString = tokenify scope exp' |> toTokenString 
       let bounds = listBoundVariables exp'
       let nextLink = tokenString + toQueryString bounds
-      sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p>%s</body></html>" (unparse exp) nextLink nameDiv |> OK
+      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p>%s%s</body></html>" (unparse exp) nextLink showNamesDiv addNameDiv
+      OK html >=> setHeader "Pragma" "no-cache"
+              >=> setHeader "Content-Type" "text/html; charset=utf-8"
     | None ->
-      let response = (sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>%s</p>%s</body>" (unparse exp) nameDiv |> OK)
-      response >=> Writers.setMimeType "text/html"
+      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p>%s%s</body>" (unparse exp) showNamesDiv addNameDiv
+      OK html >=> setHeader "Pragma" "no-cache"
+              >=> setHeader "Content-Type" "text/html; charset=utf-8"
   | None ->
     "nope" |> OK
 
@@ -274,9 +278,6 @@ let toLambdaLink encodedLambdaString =
   sprintf "/hyperlamb/%s" encodedLambdaString
 
 let handleGetLambda lamb = request (fun r ->
-  printfn "URL %s" (r.url.ToString())
-  printfn "lamb %s" lamb
-
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
   let vars : (string * VarType) list = getVars r
   let namedLambdaNames = vars |> List.filter (fun (n, t) -> t = NamedLambdaVar) |> List.map (fun (n, t) -> n)
@@ -294,7 +295,6 @@ let handleGetLambda lamb = request (fun r ->
       createTextHtmlResponse maybeExpResult)
 
 let handlePostNamedLambda = request (fun r -> 
-  printfn "handlePostNamedLambda"
   let maybeName = r.formData "name"
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
@@ -319,11 +319,9 @@ let handlePostNamedLambda = request (fun r ->
     "Missing both name and lambda." |> BAD_REQUEST)
 
 let handlePostUnnamedLambda = request (fun r -> 
-  printfn "handlePostUnnamedLambda"
   let maybeLambda = r.formData "lambda"
   match maybeLambda with 
   | Choice1Of2 lambda ->
-    printfn "provided lambda %s" lambda
     match run expParser lambda with
     | Success(exp, _, _) ->
       let scope = []
@@ -338,13 +336,11 @@ let handlePostUnnamedLambda = request (fun r ->
   | _ ->
     "boom" |> BAD_REQUEST)
 
-let handleGetNames = request (fun r -> 
-  printfn "handleGetNames"
-  let nameList = listAllNamedLambdas()
-  let toLink ts = sprintf "/hyperlamb/%s" ts
+let handleGetNamedLambdas = request (fun r -> 
+  let namedLambdas = match listAllNamedLambdas() with { namedLambdas = nls } -> nls
   let nameLinkItems = 
-    nameList 
-    |> List.map (fun (name, { name = _; lambda = _; encoded = ts }) -> (name, toLink ts))
+    namedLambdas 
+    |> List.map (fun ({ name = name; lambda = _; encoded = ts }) -> (name, toLambdaLink ts))
     |> List.map (fun (name, link) -> sprintf "<a href=\"%s\">%s</a>" link name)
     |> List.map (fun a -> sprintf "<li>%s</li>" a)
   let nameLinks = 
@@ -375,15 +371,11 @@ let handleGetNamedLambda name = request (fun r ->
     TEMPORARY_REDIRECT relativeUrl)
 
 let handlePutNamedLambda name = request (fun r -> 
-  printfn "handlePutNamedLambda"
   let maybeName = r.formData "name"
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
   | Choice1Of2 name, Choice1Of2 lambda ->
-    printfn "provided name %s" name
-    printfn "provided lambda %s" lambda
-    let overwriteReq = { name = name; lambdaString = lambda }
-    match overwriteNamedLambda overwriteReq with
+    match overwriteNamedLambda { name = name; lambdaString = lambda } with
     | FailedOverwriteDueToNameNotRegistered ->
       NOT_FOUND <| sprintf "The name %s isn't registered." name 
     | FailedOverwriteDueToInvalidLambda x ->
@@ -399,7 +391,6 @@ let handlePutNamedLambda name = request (fun r ->
     "Missing both name and lambda." |> BAD_REQUEST)
 
 let handleGetLambdaInput = request (fun r ->
-  printfn "handleGetLambdaInput"
   let mimeType = getPreferredMimeTypeFromRequest r
   match mimeType with
   | TextHtml -> 
@@ -408,7 +399,6 @@ let handleGetLambdaInput = request (fun r ->
   | _ -> NOT_ACCEPTABLE "cant")
 
 let handleDeleteNamedLambda name = 
-  printfn "handleDeleteName %s" name
   match deleteNamedLambda { name = name } with
   | FailedDeleteDueToNameNotRegistered ->
     NOT_FOUND <| sprintf "The name %s isn't registered." name
@@ -418,7 +408,7 @@ let handleDeleteNamedLambda name =
 let app : WebPart = 
   choose [ 
       GET >=> choose [ path "/hyperlamb" >=> handleGetLambdaInput 
-                       path "/hyperlamb/names" >=> handleGetNames
+                       path "/hyperlamb/names" >=> handleGetNamedLambdas
                        pathScan "/hyperlamb/names/%s" handleGetNamedLambda
                        pathScan "/hyperlamb/%s" handleGetLambda ]
       PUT >=> pathScan "/hyperlamb/names/%s" handlePutNamedLambda
