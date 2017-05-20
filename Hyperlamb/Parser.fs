@@ -7,8 +7,8 @@ open FParsec
 let expParser, expParserRef = createParserForwardedToRef<Exp, unit>()
 
 let varNameParser = 
-  many1 lower |>> (fun cs -> new String(List.toArray(cs)))
-
+  many1 lower |>> (List.toArray >> String)
+  
 let varParser = varNameParser |>> Var
 let lamParser = 
         pipe2 ((pchar 'λ' <|> pchar '\\') >>. varNameParser) 
