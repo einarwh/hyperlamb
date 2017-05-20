@@ -383,7 +383,7 @@ let handlePutNamedLambda name = request (fun r ->
     printfn "provided name %s" name
     printfn "provided lambda %s" lambda
     let overwriteReq = { name = name; lambdaString = lambda }
-    match overwriteNamedLamba overwriteReq with
+    match overwriteNamedLambda overwriteReq with
     | FailedOverwriteDueToNameNotRegistered ->
       NOT_FOUND <| sprintf "The name %s isn't registered." name 
     | FailedOverwriteDueToInvalidLambda x ->
@@ -409,11 +409,10 @@ let handleGetLambdaInput = request (fun r ->
 
 let handleDeleteName name = 
   printfn "handleDeleteName %s" name
-  match lookupNamedLambdaByName name with
-  | None ->
-    sprintf "The name %s isn't registered." name |> NOT_FOUND
-  | Some _ ->
-    unnameLambda name
+  match deleteNamedLambda { name = name } with
+  | FailedDeleteDueToNameNotRegistered ->
+    NOT_FOUND <| sprintf "The name %s isn't registered." name
+  | SuccessfulDelete namedLambda ->
     NO_CONTENT
 
 let app : WebPart = 
