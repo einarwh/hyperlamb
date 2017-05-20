@@ -2,7 +2,7 @@
 Hyperlamb is a hypermedia-driven lambda calculus evaluator. Yes.
 
 ## Starting the lambda calculus evaluator
-Open a browser and navigate to http://localhost:8080/hyperlamb
+Start the web server, open a browser and navigate to http://localhost:8080/hyperlamb
 
 You may enter a lambda expression here.
 
