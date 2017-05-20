@@ -363,7 +363,7 @@ let seeOtherRedirect location =
 
 let SEE_OTHER = seeOtherRedirect
 
-let handleGetName name = request (fun r -> 
+let handleGetNamedLambda name = request (fun r -> 
   printfn "handleGetName"
   match lookupNamedLambda { name = name } with
   | FailedLookupDueToNameNotRegistered ->
@@ -407,7 +407,7 @@ let handleGetLambdaInput = request (fun r ->
     html |> OK
   | _ -> NOT_ACCEPTABLE "cant")
 
-let handleDeleteName name = 
+let handleDeleteNamedLambda name = 
   printfn "handleDeleteName %s" name
   match deleteNamedLambda { name = name } with
   | FailedDeleteDueToNameNotRegistered ->
@@ -419,12 +419,12 @@ let app : WebPart =
   choose [ 
       GET >=> choose [ path "/hyperlamb" >=> handleGetLambdaInput 
                        path "/hyperlamb/names" >=> handleGetNames
-                       pathScan "/hyperlamb/names/%s" handleGetName
+                       pathScan "/hyperlamb/names/%s" handleGetNamedLambda
                        pathScan "/hyperlamb/%s" handleGetLambda ]
       PUT >=> pathScan "/hyperlamb/names/%s" handlePutNamedLambda
       POST >=> choose [ path "/hyperlamb" >=> handlePostUnnamedLambda
                         path "/hyperlamb/names" >=> handlePostNamedLambda ]
-      DELETE >=> pathScan "/hyperlamb/names/%s" handleDeleteName
+      DELETE >=> pathScan "/hyperlamb/names/%s" handleDeleteNamedLambda
       NOT_FOUND "nope" 
   ]
 
