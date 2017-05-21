@@ -9,7 +9,14 @@ type ExpI =
   | LamI of int * ExpI
   | AppI of ExpI * ExpI
 
+type ExpN =
+  | Name of string
+  | VarN of string
+  | LamN of string * ExpN
+  | AppN of ExpN * ExpN
+
 type Exp =
   | Var of string
   | Lam of string * Exp
   | App of Exp * Exp
+

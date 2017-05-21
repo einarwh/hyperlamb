@@ -1,6 +1,7 @@
 module Something
 
 open Types
+open Names
 
 let rec listBoundVariables exp =
   match exp with
@@ -36,3 +37,12 @@ let toQueryString (bounds : string list) =
   if bounds.Length = 0 then ""
   else bounds |> String.concat "&" |> sprintf "?%s"
 
+let rec replaceNames (names : NamedLambda list) = function
+  | Name n ->
+    let maybe = names |> List.tryFind (fun nl -> nl.name = n)
+    match maybe with
+    | Some nl -> nl.lambda
+    | None -> failwith <| sprintf "Lambda refers to unknown name %s" n
+  | VarN v -> Var v
+  | LamN (p, e) -> Lam (p, replaceNames names e)
+  | AppN (f, x) -> App (replaceNames names f, replaceNames names x)      

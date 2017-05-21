@@ -6,6 +6,14 @@ open Parser
 open Something
 open Names
 
+type ListAllNamedLambdasResponse =
+  { namedLambdas : NamedLambda list }
+
+let listAllNamedLambdas ()
+  : ListAllNamedLambdasResponse =
+  let namedLambdas = listAllNamedLambdas() |> List.map (fun (n, nls) -> nls)
+  { namedLambdas = namedLambdas }
+
 type LookupNamedLambdaRequest = 
   { name : string }
 
@@ -38,10 +46,13 @@ let registerNamedLambda (req : RegisterNamedLambdaRequest)
   | Some _ ->
     FailedRegistrationDueToNameAlreadyRegistered
   | None ->
+    //let lambdaString' = replaceNamedLambdas req.lambdaString
     match run expParser req.lambdaString with
     | Failure(x,_,_) -> 
       FailedRegistrationDueToInvalidLambda x  
-    | Success(exp, _, _) ->
+    | Success(expn, _, _) ->
+      let allNames = listAllNamedLambdas() |> (fun { namedLambdas = nls } -> nls)
+      let exp = replaceNames allNames expn
       let scope = []
       let tokenString = tokenify scope exp |> toTokenString 
       let bounds = listBoundVariables exp
@@ -69,7 +80,9 @@ let overwriteNamedLambda (req: OverwriteNamedLambdaRequest)
     match run expParser req.lambdaString with
     | Failure(x,_,_) -> 
       FailedOverwriteDueToInvalidLambda x  
-    | Success(exp, _, _) ->
+    | Success(expn, _, _) ->
+      let allNames = listAllNamedLambdas() |> (fun { namedLambdas = nls } -> nls)
+      let exp = replaceNames allNames expn
       let scope = []
       let tokenString = tokenify scope exp |> toTokenString 
       let bounds = listBoundVariables exp
@@ -93,12 +106,3 @@ let deleteNamedLambda (req : DeleteNamedLambdaRequest)
     FailedDeleteDueToNameNotRegistered
   | Some namedLambda ->
     SuccessfulDelete namedLambda
-
-type ListAllNamedLambdasResponse =
-  { namedLambdas : NamedLambda list }
-
-let listAllNamedLambdas ()
-  : ListAllNamedLambdasResponse =
-  let namedLambdas = listAllNamedLambdas() |> List.map (fun (n, nls) -> nls)
-  { namedLambdas = namedLambdas }
-  

@@ -245,11 +245,8 @@ let createTextHtmlResponse maybeExpResult =
   match maybeExpResult with 
   | Some { self = exp; next = maybeNext } ->
     let expResourceString = createLink exp
-    printfn "Looking for registered name for token string %s" expResourceString
     let namedLambdas = lookupNamedLambdasByExactTokenString expResourceString
     let names = namedLambdas |> List.map (fun { name = n; lambda = _; encoded = _ } -> n)
-    // If it is a named lambda, display the name.
-    // Otherwise, allow user to provide a name for it.
     let showNamesDiv = 
       if names.IsEmpty then "<div />"
       else
@@ -326,17 +323,18 @@ let handlePostUnnamedLambda = request (fun r ->
   match maybeLambda with 
   | Choice1Of2 lambda ->
     match run expParser lambda with
-    | Success(exp, _, _) ->
-      printfn "success - got exp"
+    | Success(expn, _, _) ->
+      let allNames = listAllNamedLambdas() |> (fun { namedLambdas = nls } -> nls)
+      let exp = replaceNames allNames expn
       let scope = []
       let tokenString = tokenify scope exp |> toTokenString 
       let bounds = listBoundVariables exp
       let link = tokenString + toQueryString bounds
       let location = sprintf "/%s" link
-      let refresh = sprintf "0; url=%s" location
-      CREATED "" >=> setHeader "location" location >=> setHeader "refresh" refresh
+      //let refresh = sprintf "0; url=%s" location
+      FOUND "" >=> setHeader "location" location 
     | Failure(x,_,_) -> 
-      printfn "nope"
+      printfn "invalid expression %s" x
       x |> BAD_REQUEST
   | _ ->
     "boom" |> BAD_REQUEST)
@@ -419,11 +417,10 @@ let app : WebPart =
       GET >=> choose [ path "/names" >=> handleGetNamedLambdas
                        pathScan "/names/%s" handleGetNamedLambda
                        path "/" >=> handleGetLambdaInput
-                       pathScan "/%s" handleGetLambda
-                       handleGetLambdaInput ]
+                       pathScan "/%s" handleGetLambda ]
       PUT >=> pathScan "/names/%s" handlePutNamedLambda
       POST >=> choose [ path "/names" >=> handlePostNamedLambda
-                        handlePostUnnamedLambda ]
+                        path "/" >=> handlePostUnnamedLambda ]
       DELETE >=> pathScan "/names/%s" handleDeleteNamedLambda
       NOT_FOUND "nope" 
   ]
