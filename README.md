@@ -14,7 +14,13 @@ You might want to start with something simple, like the identity function:
 λx.x
 ```
 
-But there's not a whole lot you can do with an expression like that. In particular, it is already on _normal form_, which means it cannot be reduced further. So you might want to try something more involved, like this:
+Note: if you find it cumbersome to type lambdas, you can use backslash as a poor man's lambdas. So the following is also an acceptable way of writing the identity function: 
+
+```
+\x.x
+```
+
+Either way, there's not a whole lot you can do with an expression like that. It is already on _normal form_, which means it cannot be reduced further. So you might want to try something more involved, like this:
 
 ```
 (λn.λf.λx.f (n f x)) (λf.λx.x)
