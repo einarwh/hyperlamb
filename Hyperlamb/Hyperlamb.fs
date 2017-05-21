@@ -257,18 +257,18 @@ let createTextHtmlResponse maybeExpResult =
               |> String.concat "" 
               |> sprintf "<div>Names: <ul>%s</ul></div>"
     let addNameDiv = 
-      sprintf "<div><form action=\"/hyperlamb\" method=\"POST\">Add name:<br /><input type=\"text\" name=\"name\" /><input type=\"hidden\" name=\"lambda\" value=\"%s\" /><input type=\"submit\" value=\"Submit\"></form></div>" (unparse exp)
+      sprintf "<div><form action=\"/hyperlamb/names\" method=\"POST\">Add name:<br /><input type=\"text\" name=\"name\" /><input type=\"hidden\" name=\"lambda\" value=\"%s\" /><input type=\"submit\" value=\"Submit\"></form></div>" (unparse exp)
     match maybeNext with 
     | Some exp' ->
       let scope = []
       let tokenString = tokenify scope exp' |> toTokenString 
       let bounds = listBoundVariables exp'
       let nextLink = tokenString + toQueryString bounds
-      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p>%s%s</body></html>" (unparse exp) nextLink showNamesDiv addNameDiv
+      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p>%s%s<a href=\"/hyperlamb\">Home</a></body></html>" (unparse exp) nextLink showNamesDiv addNameDiv
       OK html >=> setHeader "Pragma" "no-cache"
               >=> setHeader "Content-Type" "text/html; charset=utf-8"
     | None ->
-      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p>%s%s</body>" (unparse exp) showNamesDiv addNameDiv
+      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p>%s%s<a href=\"/hyperlamb\">Home</a></body></html>" (unparse exp) showNamesDiv addNameDiv
       OK html >=> setHeader "Pragma" "no-cache"
               >=> setHeader "Content-Type" "text/html; charset=utf-8"
   | None ->
@@ -319,19 +319,22 @@ let handlePostNamedLambda = request (fun r ->
     "Missing both name and lambda." |> BAD_REQUEST)
 
 let handlePostUnnamedLambda = request (fun r -> 
+  printfn "handlePostUnnamedLambda"
   let maybeLambda = r.formData "lambda"
   match maybeLambda with 
   | Choice1Of2 lambda ->
     match run expParser lambda with
     | Success(exp, _, _) ->
+      printfn "success - got exp"
       let scope = []
       let tokenString = tokenify scope exp |> toTokenString 
       let bounds = listBoundVariables exp
       let link = tokenString + toQueryString bounds
       let location = sprintf "/hyperlamb/%s" link
       let refresh = sprintf "0; url=%s" location
-      FOUND "" >=> setHeader "location" location >=> setHeader "refresh" refresh
+      CREATED "" >=> setHeader "location" location >=> setHeader "refresh" refresh
     | Failure(x,_,_) -> 
+      printfn "nope"
       x |> BAD_REQUEST
   | _ ->
     "boom" |> BAD_REQUEST)
@@ -345,8 +348,8 @@ let handleGetNamedLambdas = request (fun r ->
     |> List.map (fun a -> sprintf "<li>%s</li>" a)
   let nameLinks = 
     if nameLinkItems.IsEmpty then "" 
-    else "<div class=\"names\"><p>Registered names</p><ul>" + String.concat "" nameLinkItems + "</ul></div>" 
-  let html = sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>Register a new named lambda</p><form action=\"/hyperlamb/names\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><br />Lambda:<br /><input type=\"text\" name=\"lambda\" /><br /><br /><input type=\"submit\" value=\"Submit\"></form>%s</body>" nameLinks
+    else "<div class=\"names\"><p>Named lambdas</p><ul>" + String.concat "" nameLinkItems + "</ul></div>" 
+  let html = sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body>%s<div><p>Add a new named lambda</p><form action=\"/hyperlamb/names\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><br />Lambda:<br /><input type=\"text\" name=\"lambda\" /><br /><br /><input type=\"submit\" value=\"Submit\"></form></div><a href=\"/hyperlamb\">Home</a></body></html>" nameLinks
   OK html)
 
 let temporaryRedirect location = 
@@ -394,7 +397,7 @@ let handleGetLambdaInput = request (fun r ->
   let mimeType = getPreferredMimeTypeFromRequest r
   match mimeType with
   | TextHtml -> 
-    let html = "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>Enter a lambda</p><form action=\"/hyperlamb\" method=\"POST\"><input type=\"text\" name=\"lambda\" /><br /><input type=\"submit\" value=\"Go\"></form></body>"
+    let html = "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>Enter a lambda</p><form action=\"/hyperlamb\" method=\"POST\"><input type=\"text\" name=\"lambda\" /><br /><input type=\"submit\" value=\"Go\"></form><a href=\"/hyperlamb/names\">Named lambdas</a><br/><a href=\"/hyperlamb\">Home</a></body>"
     html |> OK
   | _ -> NOT_ACCEPTABLE "cant")
 
