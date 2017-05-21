@@ -30,4 +30,16 @@ An example should make things clearer. Say we have the expression for the Church
 λf.λx.x
 ```
 
-We find it useful to add the name zero for this expression. This adds a hyperlink, /hyperlamb/names/zero, that can be used to navigate to the expression. In addition, the name will be shown whenever we look at that particular lambda expression.
+We find it useful to add the name _zero_ for this expression. This adds a hyperlink, /hyperlamb/names/zero, that can be used to navigate to the expression. In addition, the name will be shown whenever we look at that particular lambda expression. You can also use the name as an expanding text macro in your lambda expressions, by prefixing the name with a dollar sign. For example, you can write $zero in a lambda expression and have it expand to the expression with that name.
+
+If you proceed to add the name _succ_ to the following expression:
+
+```
+λn.λf.λx.f (n f x)
+```
+
+You can now write *$succ $zero* and have it expand to this:
+
+```
+(λn.λf.λx.f (n f x)) (λf.λx.x)
+```
