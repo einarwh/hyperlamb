@@ -428,5 +428,5 @@ let main argv =
     { defaultConfig with
         bindings = [ HttpBinding.create HTTP Net.IPAddress.Loopback port ]
         listenTimeout = TimeSpan.FromMilliseconds 3000. }
-  startWebServer defaultConfig app
+  startWebServer config app
   0
