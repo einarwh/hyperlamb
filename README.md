@@ -1,6 +1,8 @@
 # hyperlamb
 Hyperlamb is a hypermedia-driven lambda calculus evaluator. Yes.
 
+This is very much work in progress.
+
 ## Starting the lambda calculus evaluator
 Start the web server, open a browser and navigate to http://localhost:8080/hyperlamb
 
@@ -20,4 +22,12 @@ But there's not a whole lot you can do with an expression like that. In particul
 
 Which can be interpreted as applying the successor function to the Church encoding of the number zero. In general when a lambda expression can be reduced further, there will be a _next_ link available to perform a reduction step. If the evaluation process terminates (as it will in this case), we will eventually end up with an expression on _normal form_ again.
 
-Lambda expressions may be _named_ to make them slightly more wieldy to work with. This is work in progress.
+Lambda expressions may be _named_ to make them slightly more wieldy to work with. Adding a name to a lambda expression creates an alias hyperlink for navigating to the expression. 
+
+An example should make things clearer. Say we have the expression for the Church encoding of zero:
+
+```
+λf.λx.x
+```
+
+We find it useful to add the name zero for this expression. This adds a hyperlink, /hyperlamb/names/zero, that can be used to navigate to the expression. In addition, the name will be shown whenever we look at that particular lambda expression.
