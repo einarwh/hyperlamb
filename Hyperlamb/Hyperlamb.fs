@@ -423,5 +423,10 @@ let app : WebPart =
 
 [<EntryPoint>]
 let main argv =
-    startWebServer defaultConfig app
-    0
+  let port = match argv with [| p |] -> (uint16 p) | _ -> uint16 8080
+  let config =
+    { defaultConfig with
+        bindings = [ HttpBinding.create HTTP Net.IPAddress.Loopback port ]
+        listenTimeout = TimeSpan.FromMilliseconds 3000. }
+  startWebServer defaultConfig app
+  0
