@@ -339,6 +339,11 @@ let handlePostUnnamedLambda = request (fun r ->
   | _ ->
     "boom" |> BAD_REQUEST)
 
+let handleGetExamples = request (fun r ->
+  let examples = [ ("", "") ]
+  let html = "<html><style>body { font-family: consolas; }</style><body><div>Examples?</div><a href=\"/\">Home</a></body></html>"
+  OK html)
+
 let handleGetNamedLambdas = request (fun r -> 
   printfn "handleGetNamedLambdas"
   let namedLambdas = match listAllNamedLambdas() with { namedLambdas = nls } -> nls
@@ -414,7 +419,8 @@ let handleDeleteNamedLambda name =
 
 let app : WebPart = 
   choose [ 
-      GET >=> choose [ path "/names" >=> handleGetNamedLambdas
+      GET >=> choose [ path "/examples" >=> handleGetExamples
+                       path "/names" >=> handleGetNamedLambdas
                        pathScan "/names/%s" handleGetNamedLambda
                        path "/" >=> handleGetLambdaInput
                        pathScan "/%s" handleGetLambda ]
