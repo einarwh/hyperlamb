@@ -4,9 +4,9 @@ Hyperlamb is a hypermedia-driven lambda calculus evaluator. Yes.
 This is very much work in progress.
 
 ## Starting the lambda calculus evaluator
-Start the web server, open a browser and navigate to http://localhost:8080/hyperlamb
+If you want, you can clone the repository, build the project, open a browser and navigate to http://localhost:8080/hyperlamb. However, it's even easier to go to http://hyperlamb.azurewebsites.net
 
-You may enter a lambda expression here.
+In either case, you should see a text box where you can enter a lambda expression.
 
 You might want to start with something simple, like the identity function:
 
