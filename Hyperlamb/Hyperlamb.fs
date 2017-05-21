@@ -257,27 +257,28 @@ let createTextHtmlResponse maybeExpResult =
               |> String.concat "" 
               |> sprintf "<div>Names: <ul>%s</ul></div>"
     let addNameDiv = 
-      sprintf "<div><form action=\"/hyperlamb/names\" method=\"POST\">Add name:<br /><input type=\"text\" name=\"name\" /><input type=\"hidden\" name=\"lambda\" value=\"%s\" /><input type=\"submit\" value=\"Submit\"></form></div>" (unparse exp)
+      sprintf "<div><form action=\"/names\" method=\"POST\">Add name:<br /><input type=\"text\" name=\"name\" /><input type=\"hidden\" name=\"lambda\" value=\"%s\" /><input type=\"submit\" value=\"Submit\"></form></div>" (unparse exp)
     match maybeNext with 
     | Some exp' ->
       let scope = []
       let tokenString = tokenify scope exp' |> toTokenString 
       let bounds = listBoundVariables exp'
       let nextLink = tokenString + toQueryString bounds
-      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p>%s%s<a href=\"/hyperlamb\">Home</a></body></html>" (unparse exp) nextLink showNamesDiv addNameDiv
+      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p><p><a href=\"%s\">Next</a></p>%s%s<a href=\"/\">Home</a></body></html>" (unparse exp) nextLink showNamesDiv addNameDiv
       OK html >=> setHeader "Pragma" "no-cache"
               >=> setHeader "Content-Type" "text/html; charset=utf-8"
     | None ->
-      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p>%s%s<a href=\"/hyperlamb\">Home</a></body></html>" (unparse exp) showNamesDiv addNameDiv
+      let html = sprintf "<html><style>body { font-family: consolas; }</style><body><p>%s</p>%s%s<a href=\"/\">Home</a></body></html>" (unparse exp) showNamesDiv addNameDiv
       OK html >=> setHeader "Pragma" "no-cache"
               >=> setHeader "Content-Type" "text/html; charset=utf-8"
   | None ->
     "nope" |> OK
 
 let toLambdaLink encodedLambdaString = 
-  sprintf "/hyperlamb/%s" encodedLambdaString
+  sprintf "/%s" encodedLambdaString
 
 let handleGetLambda lamb = request (fun r ->
+  printfn "handleGetLambda %s" lamb
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
   let vars : (string * VarType) list = getVars r
   let namedLambdaNames = vars |> List.filter (fun (n, t) -> t = NamedLambdaVar) |> List.map (fun (n, t) -> n)
@@ -295,6 +296,7 @@ let handleGetLambda lamb = request (fun r ->
       createTextHtmlResponse maybeExpResult)
 
 let handlePostNamedLambda = request (fun r -> 
+  printfn "handlePostNamedLambda"
   let maybeName = r.formData "name"
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
@@ -330,7 +332,7 @@ let handlePostUnnamedLambda = request (fun r ->
       let tokenString = tokenify scope exp |> toTokenString 
       let bounds = listBoundVariables exp
       let link = tokenString + toQueryString bounds
-      let location = sprintf "/hyperlamb/%s" link
+      let location = sprintf "/%s" link
       let refresh = sprintf "0; url=%s" location
       CREATED "" >=> setHeader "location" location >=> setHeader "refresh" refresh
     | Failure(x,_,_) -> 
@@ -340,6 +342,7 @@ let handlePostUnnamedLambda = request (fun r ->
     "boom" |> BAD_REQUEST)
 
 let handleGetNamedLambdas = request (fun r -> 
+  printfn "handleGetNamedLambdas"
   let namedLambdas = match listAllNamedLambdas() with { namedLambdas = nls } -> nls
   let nameLinkItems = 
     namedLambdas 
@@ -349,7 +352,7 @@ let handleGetNamedLambdas = request (fun r ->
   let nameLinks = 
     if nameLinkItems.IsEmpty then "" 
     else "<div class=\"names\"><p>Named lambdas</p><ul>" + String.concat "" nameLinkItems + "</ul></div>" 
-  let html = sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body>%s<div><p>Add a new named lambda</p><form action=\"/hyperlamb/names\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><br />Lambda:<br /><input type=\"text\" name=\"lambda\" /><br /><br /><input type=\"submit\" value=\"Submit\"></form></div><a href=\"/hyperlamb\">Home</a></body></html>" nameLinks
+  let html = sprintf "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body>%s<div><p>Add a new named lambda</p><form action=\"/names\" method=\"POST\">Name:<br /><input type=\"text\" name=\"name\" /><br />Lambda:<br /><input type=\"text\" name=\"lambda\" /><br /><br /><input type=\"submit\" value=\"Submit\"></form></div><a href=\"/\">Home</a></body></html>" nameLinks
   OK html)
 
 let temporaryRedirect location = 
@@ -363,7 +366,7 @@ let seeOtherRedirect location =
 let SEE_OTHER = seeOtherRedirect
 
 let handleGetNamedLambda name = request (fun r -> 
-  printfn "handleGetName"
+  printfn "handleGetNamedLambda %s" name
   match lookupNamedLambda { name = name } with
   | FailedLookupDueToNameNotRegistered ->
     NOT_FOUND <| sprintf "The name %s isn't registered." name
@@ -374,6 +377,7 @@ let handleGetNamedLambda name = request (fun r ->
     TEMPORARY_REDIRECT relativeUrl)
 
 let handlePutNamedLambda name = request (fun r -> 
+  printfn "handlePutNamedLambda %s" name
   let maybeName = r.formData "name"
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
@@ -394,14 +398,16 @@ let handlePutNamedLambda name = request (fun r ->
     "Missing both name and lambda." |> BAD_REQUEST)
 
 let handleGetLambdaInput = request (fun r ->
+  printfn "handleGetLambdaInput"
   let mimeType = getPreferredMimeTypeFromRequest r
   match mimeType with
   | TextHtml -> 
-    let html = "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>Enter a lambda</p><form action=\"/hyperlamb\" method=\"POST\"><input type=\"text\" name=\"lambda\" /><br /><input type=\"submit\" value=\"Go\"></form><a href=\"/hyperlamb/names\">Named lambdas</a><br/><a href=\"/hyperlamb\">Home</a></body>"
+    let html = "<html><META HTTP-EQUIV=\"Pragma\" CONTENT=\"no-cache\"/><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/><style>body { font-family: consolas; }</style><body><p>Enter a lambda expression</p><form action=\"\" method=\"POST\"><input type=\"text\" name=\"lambda\" /><input type=\"submit\" value=\"Go\"></form><a href=\"/names\">Named lambdas</a><br/><a href=\"/\">Home</a></body>"
     html |> OK
   | _ -> NOT_ACCEPTABLE "cant")
 
 let handleDeleteNamedLambda name = 
+  printfn "handleDeleteNamedLambda %s" name
   match deleteNamedLambda { name = name } with
   | FailedDeleteDueToNameNotRegistered ->
     NOT_FOUND <| sprintf "The name %s isn't registered." name
@@ -410,14 +416,15 @@ let handleDeleteNamedLambda name =
 
 let app : WebPart = 
   choose [ 
-      GET >=> choose [ path "/hyperlamb" >=> handleGetLambdaInput 
-                       path "/hyperlamb/names" >=> handleGetNamedLambdas
-                       pathScan "/hyperlamb/names/%s" handleGetNamedLambda
-                       pathScan "/hyperlamb/%s" handleGetLambda ]
-      PUT >=> pathScan "/hyperlamb/names/%s" handlePutNamedLambda
-      POST >=> choose [ path "/hyperlamb" >=> handlePostUnnamedLambda
-                        path "/hyperlamb/names" >=> handlePostNamedLambda ]
-      DELETE >=> pathScan "/hyperlamb/names/%s" handleDeleteNamedLambda
+      GET >=> choose [ path "/names" >=> handleGetNamedLambdas
+                       pathScan "/names/%s" handleGetNamedLambda
+                       path "/" >=> handleGetLambdaInput
+                       pathScan "/%s" handleGetLambda
+                       handleGetLambdaInput ]
+      PUT >=> pathScan "/names/%s" handlePutNamedLambda
+      POST >=> choose [ path "/names" >=> handlePostNamedLambda
+                        handlePostUnnamedLambda ]
+      DELETE >=> pathScan "/names/%s" handleDeleteNamedLambda
       NOT_FOUND "nope" 
   ]
 
