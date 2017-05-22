@@ -6,6 +6,8 @@ open SQLite
 
 open Types
 open Eval
+open TokenParser
+open ParseExpThings
 
 type NamedLambda = 
   { name: string
@@ -30,12 +32,31 @@ info |> Seq.iter (fun col -> printfn "%s" col.Name)
 let mutable persistedNameCount = 0
 let maxPersistedNameCount = 50
 
+let private parseQueryString qs = 
+  let tmp = String.split '&' qs
+  tmp |> List.map (fun s -> (s, None))
+
+let private toNamedLambda (nle : NamedLambdaEntry) : NamedLambda option = 
+  let enc = nle.Encoded
+  let ix = enc.IndexOf('?')
+  let (lamb, vars) = 
+    if ix < 0 then (enc, []) 
+    else 
+      let qps = parseQueryString <| enc.Substring(ix)
+      (enc.Substring(0, ix), getVars qps)
+  let maybeExp = parseExp tokenParser lamb vars
+  let result = maybeExp |> Option.map (fun e -> { name = nle.Name; lambda = e; encoded = nle.Encoded })
+  result
+  
 let private nameMap = 
   let m = Dictionary<string, NamedLambda>()
+  m.Add("id", { name = "id"; lambda = Lam ("x", Var "x"); encoded = "LR1?x" })
   let entries = db.Query<NamedLambdaEntry>("SELECT * FROM NamedLambdaEntry")
   printfn "Number of frozen names %d" <| entries.Count
+  let namedLambdas = entries |> Seq.map toNamedLambda |> Seq.choose id |> Seq.toList 
+  namedLambdas |> Seq.iter (fun nl -> printfn " - %s" nl.name) 
+  namedLambdas |> Seq.iter (fun nl -> m.Add(nl.name, nl))
   persistedNameCount <- entries.Count 
-  m.Add("id", { name = "id"; lambda = Lam ("x", Var "x"); encoded = "LR1?x" })
   m
 
 let listAllNamedLambdas() =

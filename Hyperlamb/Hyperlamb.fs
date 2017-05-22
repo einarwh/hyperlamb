@@ -18,91 +18,11 @@ open FParsec
 open Types
 open Parser
 open Eval
+open TokenParser
+open ParseExpThings
 open Something
 open Names
 open NameRegister
-
-type VarType = NamedLambdaVar | OrdinaryVar 
-
-
-let unparse =
-    let pstr s = "(" + s + ")"
-    let rec unparse = function
-        | Lam (p, b) -> "λ" + p + "." + unparse b
-        | App (Lam (p, b), a) -> pstr (unparse (Lam (p, b))) + " " + argstr a
-        | App (f, a) -> unparse f + " " + argstr a
-        | Var s -> s
-    and argstr = function
-        | Var s -> s
-        | t -> pstr (unparse t)
-    unparse  
-
-let getVariableName (scope : string list) (free : string list) (n : int) =
-  if n < scope.Length then
-    List.item n scope
-  else 
-    List.item (n - List.length scope) free
-  
-let expmapper (ei : ExpI) 
-              (bound : string list) 
-              (free : string list) 
-              (scope : string list) = 
-  let rec emapper (ei : ExpI) (scope : string list) =
-    match ei with 
-    | VarI n ->
-      printfn "Lookup Var %d" (n - 1)
-      let v : string = getVariableName scope free (n - 1)
-      Var v 
-    | LamI (i, ei2) -> 
-      printfn "Lookup Lam %d" i
-      let v : string = bound |> List.item i
-      Lam (v, emapper ei2 (v::scope))
-    | AppI (ei1, ei2) -> App (emapper ei1 scope, emapper ei2 scope)
-  emapper ei scope
-
-let tokenParser, tokenParserRef = createParserForwardedToRef<Token list, unit>()
-
-let abstractionTokenParser = (pchar 'L') |>> (fun _ -> Abstraction)
-let applicationTokenParser = (pchar 'A') |>> (fun _ -> Application)
-
-let referenceTokenParser = 
-  pipe2 (pchar 'R') 
-    (many1 digit) 
-    (fun _ cs -> 
-      System.String(cs |> Array.ofList) |> int |> Reference)
-
-let singleTokenParser =
-  abstractionTokenParser <|> applicationTokenParser <|> referenceTokenParser
-
-do tokenParserRef := many1 singleTokenParser
-
-type LambResult<'T> = Yay of 'T | Nay of string 
-
-let rec tokenMapper tokens lambdaIndex = 
-  match tokens with
-  | [] -> []
-  | h::t -> 
-    match h with 
-    | Reference n -> ReferenceI n :: (tokenMapper t lambdaIndex)
-    | Abstraction -> AbstractionI lambdaIndex :: (tokenMapper t (lambdaIndex + 1))
-    | Application -> ApplicationI :: (tokenMapper t lambdaIndex)
-
-let rec help tokens =
-   match tokens with
-   | [] -> None
-   | h::t ->
-     match h with 
-     | ReferenceI n -> Some (VarI n, t)
-     | AbstractionI ix -> 
-       help t |> Option.map (fun (e, r) -> LamI (ix, e), r)
-     | ApplicationI ->
-       match help t with
-       | None -> None
-       | Some (e1, r1) ->
-         match help r1 with
-         | None -> None
-         | Some (e2, r2) ->
-           Some (AppI (e1, e2), r2)
 
 // λx.λy.x -> LLR2
 // λf.λx.f (f x)
@@ -132,75 +52,13 @@ let rec help tokens =
 // exp'' = λf.λx.f ((λb.b) x)
 // LLAR2ALR1R1?f&x&b
 
-type ExpResult = 
-  { self : Exp 
-    next : Exp option }
-
-let rec countLambdas tokens =
-   match tokens with
-   | [] -> 0
-   | h::t ->
-     let n = countLambdas t
-     match h with
-     | Abstraction -> 1 + n
-     | _ -> n
-  
-let parseExpI (p : Parser<Token list, unit>) (str : string): ExpI option =
-  match run p str with
-  | Success(result, _, _) -> 
-    let lambdas = countLambdas result
-    let tokens = tokenMapper result 0
-    help tokens |> Option.map (fun (ei, ts) -> ei)
-  | Failure(errorMsg, _, _) -> None
-
-let parseExp (p : Parser<Token list, unit>) (str : string) (vars : (string * VarType) list)
-  : Exp option =
-  printfn "input <%s>" str
-  match run p str with
-  | Success(result, _, _) -> 
-    let tokens = tokenMapper result 0
-    match help tokens with
-    | Some (ei, ts) ->      
-      let boundVariableCount = countLambdas result
-      let bound = vars |> List.take boundVariableCount |> List.map (fun (n, t) -> n)
-      let free = vars |> List.skip boundVariableCount |> List.map (fun (n, t) -> n)
-      printfn "All vars: %A" vars
-      printfn "Bound vars: %A" bound
-      printfn "Free vars: %A" free
-      let e = expmapper ei bound free [] 
-      Some e
-    | None -> None
-  | Failure(errorMsg, _, _) -> 
-    None
-
-let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : (string * VarType) list)
-  : ExpResult option =
-  printfn "input <%s>" str
-  match parseExp p str vars with
-  | Some exp ->
-    let exp' = reduce exp
-    printfn "exp = %s" (unparse exp)
-    let result = 
-      match reduce exp with
-      | Next exp' ->
-        printfn "exp' = %s" (unparse exp')
-        { self = exp; next = Some exp' }
-      | Normal -> { self = exp; next = None }
-    Some result
-  | None -> None
 
 
-let getVars (r : HttpRequest) : (string * VarType) list = 
+
+let getVarsFromRequest (r : HttpRequest) : (string * VarType) list = 
   let defaults = ['a' .. 'z'] |> List.map (fun c -> string(c))
-  if r.rawQuery.Length = 0 then
-    defaults |> List.map (fun n -> n, OrdinaryVar)
-  else
-    let qps = r.query
-    let qvars = qps |> List.map (fun (k, v) -> k, match v with Some "name" -> NamedLambdaVar | _ -> OrdinaryVar) 
-    let qvarnames = qvars |> List.map (fun (n, t) -> n)
-    let additional = defaults |> List.except qvarnames
-    let vars = qvars @ (additional |> List.map (fun n -> n, OrdinaryVar))
-    vars
+  let qps = if r.rawQuery.Length = 0 then [] else r.query
+  getVars qps
 
 type AcceptableMimeType = TextPlain | TextHtml | ImagePng | Hal
 
@@ -230,9 +88,6 @@ let createTextPlainResponse maybeExp =
 //Pragma: no-cache
 //Expires: 0
   
-let rec applyNamedLambdas vars expResult : ExpResult = 
-  expResult
-
 let createLink exp = 
   let scope = []
   let tokenString = tokenify scope exp |> toTokenString 
@@ -276,15 +131,13 @@ let toLambdaLink encodedLambdaString =
 let handleGetLambda lamb = request (fun r ->
   printfn "handleGetLambda %s" lamb
   let acceptableMimeType = getPreferredMimeTypeFromRequest r
-  let vars : (string * VarType) list = getVars r
+  let vars : (string * VarType) list = getVarsFromRequest r
   let namedLambdaNames = vars |> List.filter (fun (n, t) -> t = NamedLambdaVar) |> List.map (fun (n, t) -> n)
   let missingNamedLambdas = namedLambdaNames |> List.filter (fun n -> n |> (isNamedLambda >> not))
   if missingNamedLambdas.Length > 0 then 
     BAD_REQUEST "Missing named lambdas"
   else
-    let namedLambdas = namedLambdaNames |> List.map (fun n -> n, lookupNamedLambdaByName n)
-    let maybeExpRes = parseExpResult tokenParser lamb vars
-    let maybeExpResult = maybeExpRes |> Option.map (fun er -> applyNamedLambdas namedLambdas er)
+    let maybeExpResult = parseExpResult tokenParser lamb vars
     match acceptableMimeType with 
     | TextPlain -> 
       createTextPlainResponse (maybeExpResult |> Option.map (fun { self = e; next = _} -> e))
