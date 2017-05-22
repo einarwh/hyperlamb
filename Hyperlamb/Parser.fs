@@ -7,7 +7,7 @@ open FParsec
 let expParser, expParserRef = createParserForwardedToRef<ExpN, unit>()
 
 let varNameParser = 
-  many1 lower |>> (List.toArray >> String)
+  many1 (digit <|> lower <|> upper) |>> (List.toArray >> String)
   
 let varParser = varNameParser |>> VarN
 
