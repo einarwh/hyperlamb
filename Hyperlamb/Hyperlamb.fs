@@ -52,8 +52,9 @@ open NameRegister
 // exp'' = λf.λx.f ((λb.b) x)
 // LLAR2ALR1R1?f&x&b
 
-
-
+let isAcceptableName (name : string) = 
+  let maxNameLength = 50
+  name.Length <= maxNameLength && name |> Seq.forall Char.IsLetterOrDigit
 
 let getVarsFromRequest (r : HttpRequest) : (string * VarType) list = 
   let defaults = ['a' .. 'z'] |> List.map (fun c -> string(c))
@@ -152,10 +153,9 @@ let handlePostNamedLambda = request (fun r ->
   | Choice1Of2 name, Choice1Of2 lambda ->
     printfn "provided name %s" name
     printfn "provided lambda %s" lambda
-    let maxNameLength = 50
     let maxLambdaLength = 1000
-    if name.Length > maxNameLength then
-      BAD_REQUEST "The name is too long."
+    if not <| isAcceptableName name then
+      BAD_REQUEST "The name is no good."
     else if lambda.Length > maxLambdaLength then
       BAD_REQUEST "The lambda is too long."
     else
@@ -242,16 +242,16 @@ let handleGetNamedLambda name = request (fun r ->
     printfn "URL %s" relativeUrl
     TEMPORARY_REDIRECT relativeUrl)
 
+
 let handlePutNamedLambda name = request (fun r -> 
   printfn "handlePutNamedLambda %s" name
   let maybeName = r.formData "name"
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
   | Choice1Of2 name, Choice1Of2 lambda ->
-    let maxNameLength = 50
     let maxLambdaLength = 1000
-    if name.Length > maxNameLength then
-      BAD_REQUEST "The name is too long."
+    if not <| isAcceptableName name then
+      BAD_REQUEST "The name is no good."
     else if lambda.Length > maxLambdaLength then
       BAD_REQUEST "The lambda is too long."
     else
