@@ -3,3 +3,4 @@ nuget FAKE
 nuget FSharp.Core
 nuget FParsec
 nuget Suave
+nuget sqlite-net-pcl

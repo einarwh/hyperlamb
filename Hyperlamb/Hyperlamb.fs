@@ -300,16 +300,23 @@ let handlePostNamedLambda = request (fun r ->
   | Choice1Of2 name, Choice1Of2 lambda ->
     printfn "provided name %s" name
     printfn "provided lambda %s" lambda
-    match registerNamedLambda { name = name; lambdaString = lambda } with
-    | FailedRegistrationDueToNameAlreadyRegistered ->
-      sprintf "The name %s is already registered." name |> CONFLICT 
-    | FailedRegistrationDueToInvalidLambda x ->
-      x |> BAD_REQUEST
-    | SuccessfulRegistration namedLambda ->
-      let locationHeader = toLambdaLink namedLambda.encoded
-      let refreshHeader = sprintf "0; url=%s" locationHeader
-      CREATED "" >=> setHeader "location" locationHeader
-                 >=> setHeader "refresh" refreshHeader
+    let maxNameLength = 50
+    let maxLambdaLength = 1000
+    if name.Length > maxNameLength then
+      BAD_REQUEST "The name is too long."
+    else if lambda.Length > maxLambdaLength then
+      BAD_REQUEST "The lambda is too long."
+    else
+      match registerNamedLambda { name = name; lambdaString = lambda } with
+      | FailedRegistrationDueToNameAlreadyRegistered ->
+        sprintf "The name %s is already registered." name |> CONFLICT 
+      | FailedRegistrationDueToInvalidLambda x ->
+        x |> BAD_REQUEST
+      | SuccessfulRegistration namedLambda ->
+        let locationHeader = toLambdaLink namedLambda.encoded
+        let refreshHeader = sprintf "0; url=%s" locationHeader
+        CREATED "" >=> setHeader "location" locationHeader
+                   >=> setHeader "refresh" refreshHeader
   | Choice2Of2 _, Choice1Of2 _ ->
     "Missing name." |> BAD_REQUEST
   | Choice1Of2 _, Choice2Of2 _ ->
@@ -322,20 +329,24 @@ let handlePostUnnamedLambda = request (fun r ->
   let maybeLambda = r.formData "lambda"
   match maybeLambda with 
   | Choice1Of2 lambda ->
-    match run expParser lambda with
-    | Success(expn, _, _) ->
-      let allNames = listAllNamedLambdas() |> (fun { namedLambdas = nls } -> nls)
-      let exp = replaceNames allNames expn
-      let scope = []
-      let tokenString = tokenify scope exp |> toTokenString 
-      let bounds = listBoundVariables exp
-      let link = tokenString + toQueryString bounds
-      let location = sprintf "/%s" link
-      //let refresh = sprintf "0; url=%s" location
-      FOUND "" >=> setHeader "location" location 
-    | Failure(x,_,_) -> 
-      printfn "invalid expression %s" x
-      x |> BAD_REQUEST
+    let maxLambdaLength = 1000
+    if lambda.Length > maxLambdaLength then 
+      BAD_REQUEST "The lambda is too long."
+    else 
+      match run expParser lambda with
+      | Success(expn, _, _) ->
+        let allNames = listAllNamedLambdas() |> (fun { namedLambdas = nls } -> nls)
+        let exp = replaceNames allNames expn
+        let scope = []
+        let tokenString = tokenify scope exp |> toTokenString 
+        let bounds = listBoundVariables exp
+        let link = tokenString + toQueryString bounds
+        let location = sprintf "/%s" link
+        //let refresh = sprintf "0; url=%s" location
+        FOUND "" >=> setHeader "location" location 
+      | Failure(x,_,_) -> 
+        printfn "invalid expression %s" x
+        x |> BAD_REQUEST
   | _ ->
     "boom" |> BAD_REQUEST)
 
@@ -385,14 +396,21 @@ let handlePutNamedLambda name = request (fun r ->
   let maybeLambda = r.formData "lambda"
   match maybeName, maybeLambda with 
   | Choice1Of2 name, Choice1Of2 lambda ->
-    match overwriteNamedLambda { name = name; lambdaString = lambda } with
-    | FailedOverwriteDueToNameNotRegistered ->
-      NOT_FOUND <| sprintf "The name %s isn't registered." name 
-    | FailedOverwriteDueToInvalidLambda x ->
-      BAD_REQUEST x
-    | SuccessfulOverwrite namedLambda ->
-      let locationHeader = toLambdaLink namedLambda.encoded
-      FOUND locationHeader
+    let maxNameLength = 50
+    let maxLambdaLength = 1000
+    if name.Length > maxNameLength then
+      BAD_REQUEST "The name is too long."
+    else if lambda.Length > maxLambdaLength then
+      BAD_REQUEST "The lambda is too long."
+    else
+      match overwriteNamedLambda { name = name; lambdaString = lambda } with
+      | FailedOverwriteDueToNameNotRegistered ->
+        NOT_FOUND <| sprintf "The name %s isn't registered." name 
+      | FailedOverwriteDueToInvalidLambda x ->
+        BAD_REQUEST x
+      | SuccessfulOverwrite namedLambda ->
+        let locationHeader = toLambdaLink namedLambda.encoded
+        FOUND locationHeader
   | Choice2Of2 _, Choice1Of2 _ ->
     "Missing name." |> BAD_REQUEST
   | Choice1Of2 _, Choice2Of2 _ ->

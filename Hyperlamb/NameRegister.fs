@@ -58,7 +58,7 @@ let registerNamedLambda (req : RegisterNamedLambdaRequest)
       let bounds = listBoundVariables exp
       let link = tokenString + toQueryString bounds
       let namedLambda = { name = name; lambda = exp; encoded = link }
-      addNamedLambda namedLambda
+      addNamedLambda namedLambda |> ignore
       SuccessfulRegistration namedLambda
 
 type OverwriteNamedLambdaRequest = 
