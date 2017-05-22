@@ -176,18 +176,17 @@ let parseExp (p : Parser<Token list, unit>) (str : string) (vars : (string * Var
 let parseExpResult (p : Parser<Token list, unit>) (str : string) (vars : (string * VarType) list)
   : ExpResult option =
   printfn "input <%s>" str
-  let maybeExp = parseExp p str vars
-  match maybeExp with
+  match parseExp p str vars with
   | Some exp ->
     let exp' = reduce exp
     printfn "exp = %s" (unparse exp)
-    printfn "exp' = %s" (unparse exp')
     let result = 
-      if exp = exp' then
-        { self = exp; next = None }
-      else
+      match reduce exp with
+      | Next exp' ->
+        printfn "exp' = %s" (unparse exp')
         { self = exp; next = Some exp' }
-    Some result 
+      | Normal -> { self = exp; next = None }
+    Some result
   | None -> None
 
 
