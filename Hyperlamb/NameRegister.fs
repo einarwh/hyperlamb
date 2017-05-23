@@ -105,6 +105,7 @@ let deleteNamedLambda (req : DeleteNamedLambdaRequest)
   | None ->
     FailedDeleteDueToNameNotRegistered
   | Some namedLambda ->
+    namedLambda.name |> unnameLambda
     SuccessfulDelete namedLambda
 
 type DeletePartialNamedLambdaRequest = 
