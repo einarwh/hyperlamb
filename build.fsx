@@ -6,7 +6,7 @@ open Fake
 // Directories
 let buildDir  = "./build/"
 let deployDir = "./deploy/"
-
+let wwwrootDir = "../wwwroot/"
 
 // Filesets
 let appReferences  =
@@ -29,8 +29,7 @@ Target "Build" (fun _ ->
 
 Target "Deploy" (fun _ ->
     !! (buildDir + "/**/*.*")
-    -- "*.zip"
-    |> Zip buildDir (deployDir + "ApplicationName." + version + ".zip")
+    |> Copy wwwrootDir
 )
 
 // Build order
