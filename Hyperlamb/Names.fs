@@ -103,7 +103,7 @@ let nameLambda (name : string) (lambda : Exp) (tokenString : string) =
 
 let unnameLambda (name : string) = 
   nameMap.Remove name |> ignore
-  let q = sprintf "DELETE * FROM NamedLambdaEntry WHERE Name = \"%s\"" name
+  let q = sprintf "DELETE FROM NamedLambdaEntry WHERE Name = \"%s\"" name
   db.Execute(q) |> ignore
 
 let isNamedLambda (name : string) : bool = 
