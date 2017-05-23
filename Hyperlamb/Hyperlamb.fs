@@ -52,10 +52,6 @@ open NameRegister
 // exp'' = λf.λx.f ((λb.b) x)
 // LLAR2ALR1R1?f&x&b
 
-let isAcceptableName (name : string) = 
-  let maxNameLength = 50
-  name.Length <= maxNameLength && name |> Seq.forall Char.IsLetterOrDigit
-
 let getVarsFromRequest (r : HttpRequest) : (string * VarType) list = 
   let defaults = ['a' .. 'z'] |> List.map (fun c -> string(c))
   let qps = if r.rawQuery.Length = 0 then [] else r.query
@@ -287,6 +283,18 @@ let handleDeleteNamedLambda name =
   | SuccessfulDelete namedLambda ->
     NO_CONTENT
 
+let handleDeletePartialNamedLambda name = 
+  printfn "handleDeletePartialNamedLambda %s" name
+  match deletePartialNamedLambda { name = name } with
+  | FailedDeletePartialDueToNameNotRegistered ->
+    BAD_REQUEST "uh"
+  | SuccessfulDeletePartial ->
+    NO_CONTENT
+
+let handleDeleteUglyNamedLambda = request (fun r ->
+  deleteUglyNamedLambda()
+  OK "good")
+
 let app : WebPart = 
   choose [ 
       GET >=> choose [ path "/examples" >=> handleGetExamples
@@ -297,7 +305,9 @@ let app : WebPart =
       PUT >=> pathScan "/names/%s" handlePutNamedLambda
       POST >=> choose [ path "/names" >=> handlePostNamedLambda
                         path "/" >=> handlePostUnnamedLambda ]
-      DELETE >=> pathScan "/names/%s" handleDeleteNamedLambda
+      DELETE >=> choose [ pathScan "/names/%s" handleDeleteNamedLambda
+                          pathScan "/partial/%s" handleDeletePartialNamedLambda
+                          path "/ugly" >=> handleDeleteUglyNamedLambda ]
       NOT_FOUND "nope" 
   ]
 

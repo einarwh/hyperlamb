@@ -1,5 +1,6 @@
 module Names
 
+open System
 open System.Collections.Generic
 
 open SQLite
@@ -23,6 +24,10 @@ type NamedLambdaEntry() =
     member this.Encoded 
         with get() = encoded 
         and set(value) = encoded <- value
+
+let isAcceptableName (name : string) = 
+  let maxNameLength = 50
+  name.Length <= maxNameLength && name |> Seq.forall Char.IsLetterOrDigit
 
 let db = new SQLiteConnection("lambdb"); 
 db.CreateTable<NamedLambdaEntry>() |> ignore
@@ -65,6 +70,16 @@ let listAllNamedLambdas() =
 let lookupNamedLambdaByName (name : string) : NamedLambda option = 
   if nameMap.ContainsKey name then Some <| nameMap.Item name else None
 
+let lookupNamedLambdaByPartialName (name : string) : NamedLambda list = 
+  let namedLambdas = nameMap.Values |> Seq.toList
+  let matches = namedLambdas |> List.filter (fun v -> v.name.StartsWith(name))
+  matches
+
+let lookupNamedLambdaByUglyName () : NamedLambda list = 
+  let namedLambdas = nameMap.Values |> Seq.toList
+  let matches = namedLambdas |> List.filter (fun nl -> not <| isAcceptableName nl.name)
+  matches
+
 let lookupNamedLambdasByExactTokenString (tokenString : string) : NamedLambda list = 
   nameMap.Values |> Seq.filter (fun { name = _; lambda = _; encoded = ts } -> ts = tokenString) |> Seq.toList
   
@@ -88,6 +103,8 @@ let nameLambda (name : string) (lambda : Exp) (tokenString : string) =
 
 let unnameLambda (name : string) = 
   nameMap.Remove name |> ignore
+  let q = sprintf "DELETE * FROM NamedLambdaEntry WHERE Name = \"%s\"" name
+  db.Execute(q) |> ignore
 
 let isNamedLambda (name : string) : bool = 
   nameMap.ContainsKey name

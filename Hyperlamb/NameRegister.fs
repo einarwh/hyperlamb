@@ -106,3 +106,21 @@ let deleteNamedLambda (req : DeleteNamedLambdaRequest)
     FailedDeleteDueToNameNotRegistered
   | Some namedLambda ->
     SuccessfulDelete namedLambda
+
+type DeletePartialNamedLambdaRequest = 
+  { name : string }
+
+type DeletePartialNamedLambdaResponse = 
+  | SuccessfulDeletePartial
+  | FailedDeletePartialDueToNameNotRegistered
+
+let deletePartialNamedLambda (req : DeletePartialNamedLambdaRequest) 
+  : DeletePartialNamedLambdaResponse = 
+  let name = req.name
+  let namedLambdas = lookupNamedLambdaByPartialName name 
+  namedLambdas |> List.iter (fun nl -> unnameLambda nl.name)
+  SuccessfulDeletePartial
+
+let deleteUglyNamedLambda () = 
+  let namedLambdas = lookupNamedLambdaByUglyName() 
+  namedLambdas |> List.iter (fun nl -> unnameLambda nl.name)
